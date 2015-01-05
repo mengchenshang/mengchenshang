@@ -2,10 +2,8 @@
   Simulation Source File
   -----------------------------------------------------------*/
 #include"stdafx.h"
+#include <iostream>
 #include"simulation.h"
-#include<stdio.h>
-#include<stdlib.h>
-
 
 /*-----------------------------------------------------------
   macros
@@ -15,14 +13,13 @@
 /*-----------------------------------------------------------
   globals
   -----------------------------------------------------------*/
-/*
 vec2	gPlaneNormal_Left(1.0,0.0);
 vec2	gPlaneNormal_Top(0.0,1.0);
 vec2	gPlaneNormal_Right(-1.0,0.0);
 vec2	gPlaneNormal_Bottom(0.0,-1.0);
-*/
 
 table gTable;
+game gGame;
 
 static const float gRackPositionX[] = {0.0f,0.0f,(BALL_RADIUS*2.0f),(-BALL_RADIUS*2.0f),(BALL_RADIUS*4.0f)}; 
 static const float gRackPositionZ[] = {0.5f,0.0f,(-BALL_RADIUS*3.0f),(-BALL_RADIUS*3.0f)}; 
@@ -30,27 +27,6 @@ static const float gRackPositionZ[] = {0.5f,0.0f,(-BALL_RADIUS*3.0f),(-BALL_RADI
 float gCoeffRestitution = 0.5f;
 float gCoeffFriction = 0.03f;
 float gGravityAccn = 9.8f;
-
-
-/*-----------------------------------------------------------
-  cushion class members
-  -----------------------------------------------------------*/
-void cushion::MakeNormal(void)
-{
-	//can do this in 2d
-	vec2 temp = vertices[1]-vertices[0];
-	normal(0) = temp(1);
-	normal(1) = -temp(0);
-	normal.Normalise();
-}
-
-void cushion::MakeCentre(void)
-{
-	centre = vertices[0];
-	centre += vertices[1];
-	centre/=2.0;
-}
-
 /*-----------------------------------------------------------
   ball class members
   -----------------------------------------------------------*/
@@ -103,14 +79,32 @@ void ball::ApplyFrictionForce(int ms)
 	else velocity += velocityChange;
 }
 
-void ball::DoBallCollision(ball &b)
+void ball::DoPlaneCollisions(cushion* c)
 {
-	if(HasHitBall(b)) HitBall(b);
+	if(!dropped){
+	//test each plane for collision
+	for(int i=0;i<NUM_CUSHION;i++){
+		if(HasHitPlane(*(c+i))){ 
+			HitPlane(*(c+i));
+		}
+	}}
 }
 
-void ball::DoPlaneCollision(const cushion &b)
-{
-	if(HasHitPlane(b)) HitPlane(b);
+void ball::DoBallCollision(ball &b)
+{	
+	if(!b.dropped && !dropped){
+		if(HasHitBall(b)) HitBall(b);
+	}
+}
+
+void ball::DoDropInPocket(pocket* p)
+{	
+	//test each pocket
+	if(!dropped){
+	for(int i=0;i<NUM_POCKET;i++){
+		if(CenterOnPocket(*(p+i))) DropInPocket(*(p+i));
+		}
+	}
 }
 
 void ball::Update(int ms)
@@ -123,16 +117,36 @@ void ball::Update(int ms)
 	if(velocity.Magnitude()<SMALL_VELOCITY) velocity = 0.0;
 }
 
-bool ball::HasHitPlane(const cushion &c) const
+bool ball::CenterOnPocket(pocket &p) const
+{
+	if((position-p.GetCenter()).Magnitude()<p.GetRadius()) return true;
+	else return false;
+}
+
+void ball::DropInPocket(pocket &p)
+{
+	velocity = 0.0;
+	if(index == 0) {
+		position(0) = 0;
+		position(1) = 0.5;
+		p.punish = true;
+	}else{
+		dropped = true;
+		p.newDroptBalls++;
+	}
+}
+
+bool ball::HasHitPlane(cushion &c) const
 {
 	//if moving away from plane, cannot hit
-	if(velocity.Dot(c.normal) >= 0.0) return false;
-	
+	if(velocity.Dot(c.normal) < 0.0 ){
 	//if in front of plane, then have not hit
-	vec2 relPos = position - c.vertices[0];
-	double sep = relPos.Dot(c.normal);
-	if(sep > radius) return false;
-	return true;
+		if(c.InRange(position)){
+			double relative_dis = (position-(c.end)).Dot(c.normal);
+			if( relative_dis < radius && relative_dis > -radius) return true;
+		}
+	}
+	return false;
 }
 
 bool ball::HasHitBall(const ball &b) const
@@ -152,27 +166,11 @@ bool ball::HasHitBall(const ball &b) const
 	return true;
 }
 
-void ball::HitPlane(const cushion &c)
+void ball::HitPlane(cushion &c)
 {
-	//reverse velocity component perpendicular to plane  
-	double comp = velocity.Dot(c.normal) * (1.0+gCoeffRestitution);
-	vec2 delta = -(c.normal * comp);
-	velocity += delta; 
-
-	//make some particles
-	int n = (rand()%4)+3;
-	vec3 pos(position(0),radius/2.0,position(1));
-	vec3 oset(c.normal(0),0.0,c.normal(1));
-	pos+=(oset*radius);
-	for(int i=0;i<n;i++)
-	{
-		gTable.parts.AddParticle(pos);
-	}
-
-/*
 	//assume elastic collision
 	//find plane normal
-	vec2 planeNorm = gPlaneNormal_Left;
+	vec2 planeNorm = c.normal;
 	//split velocity into 2 components:
 	//find velocity component perpendicular to plane
 	vec2 perp = planeNorm*(velocity.Dot(planeNorm));
@@ -181,7 +179,6 @@ void ball::HitPlane(const cushion &c)
 	//reverse perpendicular component
 	//parallel component is unchanged
 	velocity = parallel + (-perp)*gCoeffRestitution;
-*/
 }
 
 void ball::HitBall(ball &b)
@@ -207,122 +204,56 @@ void ball::HitBall(ball &b)
 	//find new velocities by adding unchanged parallel component to new perpendicluar component
 	velocity = parallelV + (relDir*perpVNew);
 	b.velocity = parallelV2 + (relDir*perpVNew2);
-
-
-	//make some particles
-	int n = (rand()%5)+5;
-	vec3 pos(position(0),radius/2.0,position(1));
-	vec3 oset(relDir(0),0.0,relDir(1));
-	pos+=(oset*radius);
-	for(int i=0;i<n;i++)
-	{
-		gTable.parts.AddParticle(pos);
-	}
-}
-
-/*-----------------------------------------------------------
-  particle class members
-  -----------------------------------------------------------*/
-void particle::update(int ms)
-{
-	position += (velocity*ms)/1000.0;
-	velocity(1) -= (4.0*ms)/1000.0; //(9.8*ms)/1000.0;
-}
-
-/*-----------------------------------------------------------
-  particle set class members
-  -----------------------------------------------------------*/
-void particleSet::AddParticle(const vec3 &pos)
-{
-	if(num >= MAX_PARTICLES) return;
-	particles[num] = new particle;
-	particles[num]->position = pos;
-
-	particles[num]->velocity(0) = ((rand() % 200)-100)/200.0;
-	particles[num]->velocity(2) = ((rand() % 200)-100)/200.0;
-	particles[num]->velocity(1) = 2.0*((rand() % 100)/100.0);
-
-	num++;
-}
-
-void particleSet::update(int ms)
-{
-	int i=0;
-	while(i<num)
-	{
-		particles[i]->update(ms);
-		if((particles[i]->position(1) < 0.0) && (particles[i]->velocity(1)<0.0))
-		{
-			delete particles[i];
-			particles[i] = particles[num-1];
-			num--;
-		}
-		else i++;
-	}
 }
 
 /*-----------------------------------------------------------
   table class members
   -----------------------------------------------------------*/
-void table::SetupCushions(void)
-{
-	cushions[0].vertices[0](0) = -TABLE_X; 
-	cushions[0].vertices[0](1) = -TABLE_Z + 0.3; 
-	cushions[0].vertices[1](0) = -TABLE_X; 
-	cushions[0].vertices[1](1) = TABLE_Z - 0.3; 
+table::table(){	
+		double MID_OFFSET = OFFSET(MID_ANGLE) + POCKET_RADIUS;
+		double COR_OFFSET = OFFSET(COR_ANGLE);
+		double X[] = {TABLE_X-COR_OFFSET, TABLE_X, TABLE_X+CUSHION_THICK};
+		double Z[] = {POCKET_RADIUS, POCKET_RADIUS+CUSHION_THICK, TABLE_Z-COR_OFFSET, TABLE_Z, TABLE_Z+CUSHION_THICK};
+		double points[6][4][2] = {
+			{{-X[1], Z[4]}, {-X[0], Z[3]}, {X[0], Z[3]}, {X[1], Z[4]}},	 //upper edge
+			{{X[2], Z[3]}, {X[1], Z[2]}, {X[1], Z[1]}, {X[2], Z[0]}},		//right upper edge
+			{{X[2], -Z[0]}, {X[1], -Z[1]}, {X[1], -Z[2]}, {X[2], -Z[3]}},	//right down edge
+			{{X[1], -Z[4]}, {X[0], -Z[3]}, {-X[0], -Z[3]}, {-X[1], -Z[4]}},	  //down edge
+			{{-X[2], -Z[3]}, {-X[1], -Z[2]}, {-X[1], -Z[1]}, {-X[2], -Z[0]}},   //left down edge
+			{{-X[2], Z[0]}, {-X[1], Z[1]}, {-X[1], Z[2]}, {-X[2], Z[3]}},	   //left upper edge
+			};
+		int index = 0;
+		for(int i=0;i<CONNECTED_EDGES;i++){
+			for(int j=0;j<CONNECTED_POINTS-1;j++){
+				cushions[index++].SetPosition(points[i][j][0], points[i][j][1], points[i][j+1][0], points[i][j+1][1]);
+			};
+		};
 
-	cushions[1].vertices[0](0) = -TABLE_X; 
-	cushions[1].vertices[0](1) = TABLE_Z - 0.3; 
-	cushions[1].vertices[1](0) = -TABLE_X + 0.3; 
-	cushions[1].vertices[1](1) = TABLE_Z; 
+		pockets[0].SetPosition(cushions[NUM_CUSHION-1].end, cushions[0].start);
+		int last_cushion = -1;
+		for(int i=1;i<NUM_POCKET;i++){
+			last_cushion += 3;
+			pockets[i].SetPosition(cushions[last_cushion].end, cushions[last_cushion+1].start);
+		}
 
-	cushions[2].vertices[0](0) = -TABLE_X + 0.3; 
-	cushions[2].vertices[0](1) = TABLE_Z; 
-	cushions[2].vertices[1](0) = TABLE_X - 0.3; 
-	cushions[2].vertices[1](1) = TABLE_Z; 
-
-	cushions[3].vertices[0](0) = TABLE_X - 0.3; 
-	cushions[3].vertices[0](1) = TABLE_Z; 
-	cushions[3].vertices[1](0) = TABLE_X; 
-	cushions[3].vertices[1](1) = TABLE_Z - 0.3; 
-
-	cushions[4].vertices[0](0) = TABLE_X; 
-	cushions[4].vertices[0](1) = TABLE_Z - 0.3; 
-	cushions[4].vertices[1](0) = TABLE_X; 
-	cushions[4].vertices[1](1) = -TABLE_Z + 0.3; 
-
-	cushions[5].vertices[0](0) = TABLE_X; 
-	cushions[5].vertices[0](1) = -TABLE_Z + 0.3; 
-	cushions[5].vertices[1](0) = TABLE_X - 0.3; 
-	cushions[5].vertices[1](1) = -TABLE_Z; 
-
-	cushions[6].vertices[0](0) = TABLE_X - 0.3; 
-	cushions[6].vertices[0](1) = -TABLE_Z; 
-	cushions[6].vertices[1](0) = -TABLE_X + 0.3; 
-	cushions[6].vertices[1](1) = -TABLE_Z; 
-
-	cushions[7].vertices[0](0) = -TABLE_X + 0.3; 
-	cushions[7].vertices[0](1) = -TABLE_Z; 
-	cushions[7].vertices[1](0) = -TABLE_X; 
-	cushions[7].vertices[1](1) = -TABLE_Z + 0.3; 
-
-	for(int i=0;i<NUM_CUSHIONS;i++)
-	{
-		cushions[i].MakeCentre();
-		cushions[i].MakeNormal();
+		/*
+		for(int i=0;i<NUM_CUSHION;i++){
+			std::cout << cushions[i].start.elem[0] << "|" <<cushions[i].start.elem[1] <<	"+" << cushions[i].end.elem[0] << "|" << cushions[i].end.elem[1] << "==" << cushions[i].normal.elem[0] << "|" << cushions[i].normal.elem[1] << std::endl;
+		};*/
 	}
-}
+
 
 void table::Update(int ms)
 {
-	//check for collisions for each ball
+	//check for collisions with planes and pockets, for all balls
+	for(int i=0;i<NUM_BALLS;i++) {
+		balls[i].DoPlaneCollisions(cushions);
+		balls[i].DoDropInPocket(pockets);
+	}
+	
+	//check for collisions between pairs of balls
 	for(int i=0;i<NUM_BALLS;i++) 
 	{
-		for(int j=0;j<NUM_CUSHIONS;j++)
-		{
-			balls[i].DoPlaneCollision(cushions[j]);
-		}
-
 		for(int j=(i+1);j<NUM_BALLS;j++) 
 		{
 			balls[i].DoBallCollision(balls[j]);
@@ -331,13 +262,6 @@ void table::Update(int ms)
 	
 	//update all balls
 	for(int i=0;i<NUM_BALLS;i++) balls[i].Update(ms);
-
-	//update particles
-	parts.update(ms);
-
-	//make some new particles
-	//vec3 pos(0.0,BALL_RADIUS,0.0);
-	//parts.AddParticle(pos);
 }
 
 bool table::AnyBallsMoving(void) const
@@ -349,4 +273,130 @@ bool table::AnyBallsMoving(void) const
 		if(balls[i].velocity(1)!=0.0) return true;
 	}
 	return false;
+}
+
+
+vec2 cushion::GetNormal(void)
+{
+	vec2 line = end - start;
+	return vec2(line.elem[1], -line.elem[0]);
+}
+
+void cushion::SetPosition(double start_x, double start_y, double end_x, double end_y)
+{	
+	vec2 s(start_x, start_y);
+	vec2 e(end_x, end_y);
+	assert( s != e );
+	start = s, end = e;
+	normal = GetNormal().Normalised();
+}
+
+bool cushion::InRange(vec2 position){
+	double x = position.elem[0];
+	double y = position.elem[1];
+	if((y < start.elem[1] && y > end.elem[1]) || (y > start.elem[1] && y < end.elem[1])){
+		return true;
+	}
+	if((x < start.elem[0] && x > end.elem[0]) || (x > start.elem[0] && x < end.elem[0])){ 
+		return true;
+	}
+	return false;
+}
+
+/*-----------------------------------------------------------
+  pocket class members
+  -----------------------------------------------------------*/
+void pocket::SetPosition(vec2 v1, vec2 v2)
+{
+	if(v1.elem[1]==v2.elem[1]){		//the middle pockets
+		position = (v1+v2)/2.0;
+		radius = POCKET_RADIUS;
+	}else{							//the corner pockets
+		position = (v1+v2)/2.0;
+		radius = (v2-v1).Magnitude()/2;
+		//std::cout << "radius:" << radius << std::endl;
+	};
+}
+
+void pocket::Reset()
+{
+	newDroptBalls = 0;
+	punish = false;
+}
+
+/*-----------------------------------------------------------
+  player class members
+  -----------------------------------------------------------*/
+int player::playerIndexCnt = 0;
+
+int player::GetScores(pocket* p){
+	continueHit = false;
+	printScores = false;
+	int temp_scores = 0;
+	for(int i=0;i<NUM_POCKET;i++){
+		if((p+i)->punish){
+			scores -= 2;
+			printScores = true;
+		};
+		if((p+i)->newDroptBalls>0){
+			temp_scores += (p+i)->newDroptBalls;
+			continueHit = true;
+			printScores = true;
+		};
+		(p+i)->Reset();
+	};
+	scores += temp_scores;
+	return temp_scores;
+}
+
+
+
+/*-----------------------------------------------------------
+  game class members
+  -----------------------------------------------------------*/
+int game::NextPlayer()
+{	
+	curPlayerNo++;
+	curPlayerNo %= NUM_PLAYER;
+	return curPlayerNo;
+}
+
+void game::PrintScores()
+{
+	for(int i=0;i<NUM_PLAYER;i++){
+		std::cout << players[i].name << ": " << players[i].scores << "|";
+	}
+	std::cout << std::endl;
+}
+
+void game::Update(int ms){
+	gameTable.Update(ms);
+
+	//allow one check between 2 hits
+	bool ready = ReadyNextHit();
+	if(!ready) checked=false;	
+	if(ready && !checked){
+		pocket* p = gameTable.pockets;
+		totalScores += players[curPlayerNo].GetScores(p);
+		if(players[curPlayerNo].printScores){
+			PrintScores();
+		};
+		if(GameOver()){
+			player winner = players[0];
+			for(int i=1;i<NUM_PLAYER;i++){
+				if(winner.scores < players[i].scores) winner=players[i];
+			}
+			std::cout << "Congratulation! " << winner.name << " won in the game!";
+		}
+		if(!players[curPlayerNo].continueHit){
+			NextPlayer();
+		};
+		checked = true;
+	}
+}
+
+bool game::GameOver()
+{
+	if(totalScores==NUM_BALLS-1) return true;	//without the white ball
+	else return false;
 }

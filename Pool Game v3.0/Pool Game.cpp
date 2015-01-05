@@ -2,10 +2,9 @@
 //
 
 #include "stdafx.h"
-#include "stdafx.h"
+#include "simulation.h"
 #include<glut.h>
 #include<math.h>
-#include"simulation.h"
 
 //cue variables
 float gCueAngle = 0.0;
@@ -126,6 +125,22 @@ void DoCamera(int ms)
 }
 
 
+void DrawCircle(vec2 p, double r, int num_segments)
+{
+    glBegin(GL_LINE_LOOP);
+    for(int ii = 0; ii < num_segments; ii++)
+    {
+        float theta = 2.0f * PI * float(ii) / float(num_segments);//get the current angle
+
+        float x = r * cosf(theta);//calculate the x component
+        float y = r * sinf(theta);//calculate the y component
+
+		glVertex3f(x + p.elem[0], 0.0, y + p.elem[1]);//output vertex
+
+    }
+    glEnd();
+}
+
 void RenderScene(void) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -136,7 +151,10 @@ void RenderScene(void) {
 	//draw the ball
 	glColor3f(1.0,1.0,1.0);
 	for(int i=0;i<NUM_BALLS;i++)
-	{
+	{	
+		if(gTable.balls[i].dropped){
+			continue;
+		}
 		glPushMatrix();
 		glTranslatef(gTable.balls[i].position(0),(BALL_RADIUS/2.0),gTable.balls[i].position(1));
 		#if DRAW_SOLID
@@ -150,48 +168,23 @@ void RenderScene(void) {
 	glColor3f(1.0,1.0,1.0);
 
 	//draw the table
-	for(int i=0;i<NUM_CUSHIONS;i++)
-	{	
+	glPushMatrix();
+	
+	for(int i=0;i<NUM_CUSHION;i++){
 		glBegin(GL_LINE_LOOP);
-		glVertex3f (gTable.cushions[i].vertices[0](0), 0.0, gTable.cushions[i].vertices[0](1));
-		glVertex3f (gTable.cushions[i].vertices[0](0), 0.1, gTable.cushions[i].vertices[0](1));
-		glVertex3f (gTable.cushions[i].vertices[1](0), 0.1, gTable.cushions[i].vertices[1](1));
-		glVertex3f (gTable.cushions[i].vertices[1](0), 0.0, gTable.cushions[i].vertices[1](1));
+		vec2 cushion_start = gTable.cushions[i].start;
+		vec2 cushion_end = gTable.cushions[i].end;
+		glVertex3f(cushion_start.elem[0], 0.0, cushion_start.elem[1]);
+		glVertex3f(cushion_start.elem[0], 0.1, cushion_start.elem[1]);
+		glVertex3f(cushion_end.elem[0], 0.1, cushion_end.elem[1]);
+		glVertex3f(cushion_end.elem[0], 0.0, cushion_end.elem[1]);
 		glEnd();
 	}
 
-	for(int i=0;i<gTable.parts.num;i++)
-	{
-		glColor3f(1.0,0.0,0.0);
-		glPushMatrix();
-		glTranslatef(gTable.parts.particles[i]->position(0),gTable.parts.particles[i]->position(1),gTable.parts.particles[i]->position(2));
-		#if DRAW_SOLID
-		glutSolidSphere(0.002f,32,32);
-		#else
-		glutWireSphere(0.002f,12,12);
-		#endif
-		glPopMatrix();		
-	}
-	/*
-	glBegin(GL_LINE_LOOP);
-	glVertex3f (TABLE_X, 0.0, -TABLE_Z);
-	glVertex3f (TABLE_X, 0.1, -TABLE_Z);
-	glVertex3f (TABLE_X, 0.1, TABLE_Z);
-	glVertex3f (TABLE_X, 0.0, TABLE_Z);
-	glEnd();
-	glBegin(GL_LINE_LOOP);
-	glVertex3f (TABLE_X, 0.0, -TABLE_Z);
-	glVertex3f (TABLE_X, 0.1, -TABLE_Z);
-	glVertex3f (-TABLE_X, 0.1, -TABLE_Z);
-	glVertex3f (-TABLE_X, 0.0, -TABLE_Z);
-	glEnd();
-	glBegin(GL_LINE_LOOP);
-	glVertex3f (TABLE_X, 0.0, TABLE_Z);
-	glVertex3f (TABLE_X, 0.1, TABLE_Z);
-	glVertex3f (-TABLE_X, 0.1, TABLE_Z);
-	glVertex3f (-TABLE_X, 0.0, TABLE_Z);
-	glEnd();
-	*/
+	//draw pockets
+	for(int i=0;i<NUM_POCKET;i++){
+		DrawCircle(gTable.pockets[i].GetCenter(), gTable.pockets[i].GetRadius(), 50);
+	} 
 
 	//draw the cue
 	if(gDoCue)
@@ -205,8 +198,8 @@ void RenderScene(void) {
 		glColor3f(1.0,1.0,1.0);
 		glEnd();
 	}
-
-	//glPopMatrix();
+ 
+	glPopMatrix();
 
 	glFlush();
 	glutSwapBuffers();
@@ -412,7 +405,7 @@ void InitLights(void)
 
 void UpdateScene(int ms) 
 {
-	if(gTable.AnyBallsMoving()==false) gDoCue = true;
+	if(gGame.ReadyNextHit()) gDoCue = true;
 	else gDoCue = false;
 
 	if(gDoCue)
@@ -430,16 +423,24 @@ void UpdateScene(int ms)
 
 	DoCamera(ms);
 
-	gTable.Update(ms);
+	gGame.Update(ms);
 
 	glutTimerFunc(SIM_UPDATE_MS, UpdateScene, SIM_UPDATE_MS);
 	glutPostRedisplay();
 }
 
+/*
+int _tmain(int argc, _TCHAR* argv[]){
+	vec2 a1(-5,3);
+	vec2 a2(5, 3);
+	cushion c(a1, a2);
+	std::cout << c.normal.elem[0] << c.normal.elem[1];
+}
+*/
+
+
 int _tmain(int argc, _TCHAR* argv[])
 {
-	gTable.SetupCushions();
-
 	glutInit(&argc, ((char **)argv));
 	glutInitDisplayMode(GLUT_DEPTH | GLUT_DOUBLE| GLUT_RGBA);
 	glutInitWindowPosition(0,0);
