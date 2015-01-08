@@ -124,18 +124,17 @@ void DoCamera(int ms)
 	}
 }
 
-
-void DrawCircle(vec2 p, double r, int num_segments)
+void DrawCircle(vec2 v, double r, int num_segments)
 {
     glBegin(GL_LINE_LOOP);
-    for(int ii = 0; ii < num_segments; ii++)
+    for(int Q = 0; Q < num_segments; Q++)
     {
-        float theta = 2.0f * PI * float(ii) / float(num_segments);//get the current angle
+        float theta = 2.0f * PI * float(Q) / float(num_segments);//get the current angle
 
-        float x = r * cosf(theta);//calculate the x component
+        float x = 0.5*r * cosf(theta);//calculate the x component
         float y = r * sinf(theta);//calculate the y component
 
-		glVertex3f(x + p.elem[0], 0.0, y + p.elem[1]);//output vertex
+		 glVertex3f(x + v.elem[0], 0.0, y + v.elem[1]);//output vertex
 
     }
     glEnd();

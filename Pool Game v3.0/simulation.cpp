@@ -236,10 +236,6 @@ table::table(){
 			pockets[i].SetPosition(cushions[last_cushion].end, cushions[last_cushion+1].start);
 		}
 
-		/*
-		for(int i=0;i<NUM_CUSHION;i++){
-			std::cout << cushions[i].start.elem[0] << "|" <<cushions[i].start.elem[1] <<	"+" << cushions[i].end.elem[0] << "|" << cushions[i].end.elem[1] << "==" << cushions[i].normal.elem[0] << "|" << cushions[i].normal.elem[1] << std::endl;
-		};*/
 	}
 
 
@@ -314,7 +310,7 @@ void pocket::SetPosition(vec2 v1, vec2 v2)
 	}else{							//the corner pockets
 		position = (v1+v2)/2.0;
 		radius = (v2-v1).Magnitude()/2;
-		//std::cout << "radius:" << radius << std::endl;
+		
 	};
 }
 
@@ -324,23 +320,29 @@ void pocket::Reset()
 	punish = false;
 }
 
+
+
+
 /*-----------------------------------------------------------
   player class members
   -----------------------------------------------------------*/
 int player::playerIndexCnt = 0;
 
 int player::GetScores(pocket* p){
+
 	continueHit = false;
 	printScores = false;
 	int temp_scores = 0;
 	for(int i=0;i<NUM_POCKET;i++){
 		if((p+i)->punish){
-			scores -= 2;
+			scores -= 1;
 			printScores = true;
+			std::cout <<"Punished: score -1 !"<<std::endl;
 		};
 		if((p+i)->newDroptBalls>0){
 			temp_scores += (p+i)->newDroptBalls;
 			continueHit = true;
+			std::cout <<"Got 1 score! "<<std::endl;
 			printScores = true;
 		};
 		(p+i)->Reset();
@@ -364,9 +366,9 @@ int game::NextPlayer()
 void game::PrintScores()
 {
 	for(int i=0;i<NUM_PLAYER;i++){
-		std::cout << players[i].name << ": " << players[i].scores << "|";
+		std::cout << players[i].name << ": " << players[i].scores << "\n";
 	}
-	std::cout << std::endl;
+	std::cout << "\n"<<std::endl;
 }
 
 void game::Update(int ms){
@@ -386,7 +388,7 @@ void game::Update(int ms){
 			for(int i=1;i<NUM_PLAYER;i++){
 				if(winner.scores < players[i].scores) winner=players[i];
 			}
-			std::cout << "Congratulation! " << winner.name << " won in the game!";
+			std::cout << "The winner is : " << winner.name ;
 		}
 		if(!players[curPlayerNo].continueHit){
 			NextPlayer();
@@ -397,6 +399,8 @@ void game::Update(int ms){
 
 bool game::GameOver()
 {
-	if(totalScores==NUM_BALLS-1) return true;	//without the white ball
+	if(totalScores==NUM_BALLS-1) return true;	
+	//std::cout << "finished " << std::endl;
 	else return false;
+	//std::cout << "not end " << std::endl;
 }
